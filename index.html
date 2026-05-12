@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minecraft Clone with Gemini</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Prevent browser zooming/scrolling */
+        }
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background-color: transparent;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            pointer-events: none;
+        }
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: white;
+            transform: translate(-50%, -50%);
+        }
+        #blocker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            pointer-events: auto;
+        }
+        #instructions {
+            width: 400px;
+            max-width: 90%;
+            padding: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            text-align: center;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 2px solid #777;
+        }
+        #hotbar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px;
+            border-radius: 5px;
+            pointer-events: auto;
+            z-index: 15;
+        }
+        .slot {
+            width: 40px;
+            height: 40px;
+            margin: 0 5px;
+            border: 2px solid #555;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 10px;
+            color: white;
+            background-size: cover;
+            image-rendering: pixelated;
+        }
+        .slot.active {
+            border-color: white;
+            transform: scale(1.1);
+        }
+        #debug {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 12px;
+            text-shadow: 1px 1px 0 #000;
+            z-index: 5;
+        }
+        
+        /* Gemini UI Styles */
+        #magic-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 250px;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #4ade80;
+            color: white;
+            display: none; 
+            pointer-events: auto;
+            z-index: 30;
+        }
+        #magic-panel h3 { margin-top: 0; color: #4ade80; text-align: center; }
+        #magic-input {
+            width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box;
+            background: #222; border: 1px solid #555; color: white; border-radius: 4px;
+        }
+        .magic-btn {
+            width: 100%; padding: 8px; margin-bottom: 8px; cursor: pointer;
+            background: #2f5c3b; color: white; border: none; border-radius: 4px;
+            transition: background 0.2s; font-weight: bold;
+        }
+        .magic-btn:hover { background: #4ade80; color: black; }
+        #magic-status { font-size: 11px; color: #ccc; margin-top: 5px; min-height: 15px; text-align: center; }
+        #challenge-text { font-style: italic; color: #eab308; margin-bottom: 10px; font-size: 12px; text-align: center; }
+
+        /* --- MOBILE CONTROLS --- */
+        #mobile-controls {
+            display: none; /* Hidden on desktop */
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 14;
+        }
+
+        /* Virtual Joystick Zone */
+        #joystick-zone {
+            position: absolute;
+            bottom: 80px; left: 20px;
+            width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            pointer-events: auto;
+            touch-action: none;
+        }
+        #joystick-knob {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 40px; height: 40px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Action Buttons */
+        .mobile-btn {
+            position: absolute;
+            width: 60px; height: 60px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid white;
+            border-radius: 50%;
+            color: white;
+            font-size: 24px;
+            display: flex; justify-content: center; align-items: center;
+            pointer-events: auto;
+            user-select: none;
+        }
+        .mobile-btn:active { background: rgba(255, 255, 255, 0.3); }
+
+        #btn-jump { bottom: 80px; right: 20px; }
+        #btn-mine { bottom: 160px; right: 20px; background: rgba(200, 50, 50, 0.5); font-size: 20px;}
+        #btn-build { bottom: 160px; right: 90px; background: rgba(50, 200, 50, 0.5); font-size: 20px;}
+        #btn-magic-mobile { top: 10px; right: 10px; width: 40px; height: 40px; font-size: 18px; border-radius: 8px;}
+
+        /* Media Query for Mobile detection (rough) */
+        @media (hover: none) and (pointer: coarse) {
+            #mobile-controls { display: block; }
+            #instructions p { display: none; } /* Hide keyboard instructions */
+            #instructions h1::after { content: "\nTap to Start"; font-size: 20px; display: block; margin-top: 10px;}
+            #hotbar { bottom: 10px; }
+            .slot { width: 35px; height: 35px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="crosshair"></div>
+    <div id="debug">Minecraft JS <span class="key-hint"></span></div>
+    
+    <!-- Gemini Magic Panel -->
+    <div id="magic-panel">
+        <h3>Gemini Magic ✨</h3>
+        <div id="challenge-text">Need an idea? Click below!</div>
+        <button class="magic-btn" id="btn-idea">Get Idea ✨</button>
+        <hr style="border-color: #444; margin: 10px 0;">
+        <input type="text" id="magic-input" placeholder="e.g., 'Small Stone Pyramid'">
+        <button class="magic-btn" id="btn-build">Magic Build ✨</button>
+        <div id="magic-status">Ready</div>
+        <button class="magic-btn" style="background:#555; margin-top:5px" id="btn-close">Close (Resume)</button>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="mobile-controls">
+        <div id="joystick-zone"><div id="joystick-knob"></div></div>
+        <div id="btn-jump" class="mobile-btn">⬆️</div>
+        <div id="btn-mine" class="mobile-btn">⛏️</div>
+        <div id="btn-build" class="mobile-btn">🧱</div>
+        <div id="btn-magic-mobile" class="mobile-btn">✨</div>
+    </div>
+
+    <div id="blocker">
+        <div id="instructions">
+            <h1 style="margin-top:0">VOXEL WORLD</h1>
+            <p>Click to Play</p>
+            <p><strong>WASD</strong> Move | <strong>SPACE</strong> Jump</p>
+            <p><strong>Click</strong> Mine | <strong>R-Click</strong> Build</p>
+            <p><strong>1-5</strong> Select Block | <strong>T</strong> Magic Tools ✨</p>
+        </div>
+    </div>
+
+    <div id="hotbar">
+        <!-- Slots injected by JS -->
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // --- GEMINI API KEY ---
+        // Ideally, this key is injected by the environment.
+        const apiKey = ""; 
+        
+        // --- CONFIGURATION ---
+        const CHUNK_SIZE = 20;
+        
+        // --- GLOBALS ---
+        let camera, scene, renderer;
+        let controls;
+        let raycaster;
+        const objects = []; 
+        const worldData = {}; 
+        
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let canJump = false;
+        
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        
+        let selectedBlockType = 1; 
+
+        // Mobile State
+        let isMobile = false;
+        let joystickMove = { x: 0, y: 0 }; // Range -1 to 1
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+
+        // --- BLOCK DEFINITIONS ---
+        function createTexture(color, noiseAmount = 20) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color; ctx.fillRect(0, 0, 64, 64);
+            
+            for (let i = 0; i < 400; i++) {
+                const x = Math.floor(Math.random() * 64);
+                const y = Math.floor(Math.random() * 64);
+                const amt = Math.floor(Math.random() * noiseAmount) - noiseAmount/2;
+                ctx.fillStyle = amt > 0 ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+                ctx.fillRect(x, y, 2, 2);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+        const textures = {
+            grassTop: createTexture('#5C9E47'),
+            grassSide: createTexture('#5C9E47', 40), 
+            dirt: createTexture('#63412B'),
+            stone: createTexture('#757575'),
+            woodSide: createTexture('#4A3318'),
+            woodTop: createTexture('#6B4C29'),
+            leaves: createTexture('#3A7A3A'),
+        };
+
+        {
+            const c = document.createElement('canvas'); c.width=64; c.height=64;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(textures.grassSide.image, 0, 0);
+            ctx.fillStyle = '#63412B'; ctx.fillRect(0, 50, 64, 14); 
+            textures.grassSide = new THREE.CanvasTexture(c);
+            textures.grassSide.magFilter = THREE.NearestFilter;
+        }
+
+        const materials = [
+            null,
+            [ new THREE.MeshLambertMaterial({ map: textures.grassSide }), new THREE.MeshLambertMaterial({ map: textures.grassSide }), new THREE.MeshLambertMaterial({ map: textures.grassTop }), new THREE.MeshLambertMaterial({ map: textures.dirt }), new THREE.MeshLambertMaterial({ map: textures.grassSide }), new THREE.MeshLambertMaterial({ map: textures.grassSide }) ],
+            new THREE.MeshLambertMaterial({ map: textures.dirt }),
+            new THREE.MeshLambertMaterial({ map: textures.stone }),
+            [ new THREE.MeshLambertMaterial({ map: textures.woodSide }), new THREE.MeshLambertMaterial({ map: textures.woodSide }), new THREE.MeshLambertMaterial({ map: textures.woodTop }), new THREE.MeshLambertMaterial({ map: textures.woodTop }), new THREE.MeshLambertMaterial({ map: textures.woodSide }), new THREE.MeshLambertMaterial({ map: textures.woodSide }) ],
+            new THREE.MeshLambertMaterial({ map: textures.leaves, transparent: true, opacity: 0.9 }),
+        ];
+
+        // --- SETUP ---
+        function init() {
+            // Check mobile
+            isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 800;
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 10, 60);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xcccccc);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 0.5).normalize();
+            scene.add(directionalLight);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Controls Object
+            const pitchObject = new THREE.Object3D();
+            pitchObject.add(camera);
+            const yawObject = new THREE.Object3D();
+            yawObject.position.y = 10; 
+            yawObject.add(pitchObject);
+            scene.add(yawObject);
+            
+            controls = {
+                getObject: () => yawObject,
+                enabled: false
+            };
+
+            // Mouse Look (Desktop)
+            const onMouseMove = (event) => {
+                if (controls.enabled === false || isMobile) return;
+                const movementX = event.movementX || 0;
+                const movementY = event.movementY || 0;
+                yawObject.rotation.y -= movementX * 0.002;
+                pitchObject.rotation.x -= movementY * 0.002;
+                pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
+            };
+            document.addEventListener('mousemove', onMouseMove, false);
+
+            // Pointer Lock / Start Game
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+            const magicPanel = document.getElementById('magic-panel');
+
+            instructions.addEventListener('click', function () {
+                if(!isMobile) {
+                    document.body.requestPointerLock();
+                } else {
+                    // Mobile Start
+                    controls.enabled = true;
+                    blocker.style.display = 'none';
+                    magicPanel.style.display = 'none';
+                }
+            });
+
+            document.addEventListener('pointerlockchange', function () {
+                if (document.pointerLockElement === document.body) {
+                    controls.enabled = true;
+                    blocker.style.display = 'none';
+                    magicPanel.style.display = 'none';
+                } else {
+                    controls.enabled = false;
+                    if(magicPanel.style.display !== 'block') {
+                        blocker.style.display = 'flex';
+                    }
+                }
+            });
+
+            // Keyboard Inputs
+            const onKeyDown = function (event) {
+                if (magicPanel.style.display === 'block') {
+                    if (event.code === 'Escape') closeMagicPanel();
+                    return; 
+                }
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = true; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                    case 'Space': if (canJump) velocity.y += 12; canJump = false; break;
+                    case 'Digit1': selectSlot(1); break;
+                    case 'Digit2': selectSlot(2); break;
+                    case 'Digit3': selectSlot(3); break;
+                    case 'Digit4': selectSlot(4); break;
+                    case 'Digit5': selectSlot(5); break;
+                    case 'KeyT': openMagicPanel(); break;
+                }
+            };
+            const onKeyUp = function (event) {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = false; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                }
+            };
+            document.addEventListener('keydown', onKeyDown, false);
+            document.addEventListener('keyup', onKeyUp, false);
+
+            // Raycaster
+            raycaster = new THREE.Raycaster();
+            raycaster.far = 6; 
+            document.addEventListener('mousedown', (e) => {
+                if(!isMobile) onMouseClick(e); // Only use mouse click on desktop
+            }, false);
+
+            // Init World
+            generateWorld();
+            setupHotbar();
+            setupGeminiUI();
+            setupMobileControls(yawObject, pitchObject); // Setup Mobile
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        // --- MOBILE CONTROLS LOGIC ---
+        function setupMobileControls(yawObj, pitchObj) {
+            if (!isMobile) return;
+
+            // 1. Joystick
+            const zone = document.getElementById('joystick-zone');
+            const knob = document.getElementById('joystick-knob');
+            let startX, startY;
+
+            zone.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent scroll
+                const touch = e.touches[0];
+                startX = touch.clientX;
+                startY = touch.clientY;
+            }, {passive: false});
+
+            zone.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - startX;
+                const deltaY = touch.clientY - startY;
+                const dist = Math.min(40, Math.sqrt(deltaX*deltaX + deltaY*deltaY));
+                const angle = Math.atan2(deltaY, deltaX);
+                
+                const moveX = Math.cos(angle) * dist;
+                const moveY = Math.sin(angle) * dist;
+
+                knob.style.transform = `translate(calc(-50% + ${moveX}px), calc(-50% + ${moveY}px))`;
+                
+                // Update movement vector (-1 to 1)
+                joystickMove.x = moveX / 40; 
+                joystickMove.y = moveY / 40;
+            }, {passive: false});
+
+            zone.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                knob.style.transform = `translate(-50%, -50%)`;
+                joystickMove.x = 0;
+                joystickMove.y = 0;
+            });
+
+            // 2. Camera Look (Touch anywhere else)
+            document.body.addEventListener('touchstart', (e) => {
+                if(e.target.closest('.mobile-btn') || e.target.closest('#joystick-zone') || e.target.closest('#hotbar') || e.target.closest('#magic-panel')) return;
+                lastTouchX = e.touches[0].clientX;
+                lastTouchY = e.touches[0].clientY;
+            });
+
+            document.body.addEventListener('touchmove', (e) => {
+                if(!controls.enabled) return;
+                if(e.target.closest('.mobile-btn') || e.target.closest('#joystick-zone') || e.target.closest('#hotbar') || e.target.closest('#magic-panel')) return;
+                
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - lastTouchX;
+                const deltaY = touch.clientY - lastTouchY;
+                
+                lastTouchX = touch.clientX;
+                lastTouchY = touch.clientY;
+
+                yawObj.rotation.y -= deltaX * 0.005;
+                pitchObj.rotation.x -= deltaY * 0.005;
+                pitchObj.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObj.rotation.x));
+            });
+
+            // 3. Action Buttons
+            document.getElementById('btn-jump').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (canJump) velocity.y += 12; 
+                canJump = false;
+            });
+            document.getElementById('btn-mine').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                performAction(0); // 0 = Mine
+            });
+            document.getElementById('btn-build').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                performAction(2); // 2 = Build
+            });
+            document.getElementById('btn-magic-mobile').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                openMagicPanel();
+            });
+        }
+
+        // --- GEMINI LOGIC ---
+        function openMagicPanel() {
+            if(!isMobile) document.exitPointerLock();
+            controls.enabled = false;
+            document.getElementById('blocker').style.display = 'none';
+            document.getElementById('magic-panel').style.display = 'block';
+            document.getElementById('magic-input').focus();
+        }
+
+        function closeMagicPanel() {
+            document.getElementById('magic-panel').style.display = 'none';
+            if(!isMobile) {
+                document.body.requestPointerLock();
+            } else {
+                controls.enabled = true;
+            }
+        }
+
+        function setupGeminiUI() {
+            document.getElementById('btn-close').addEventListener('click', closeMagicPanel);
+            
+            document.getElementById('btn-idea').addEventListener('click', async () => {
+                const status = document.getElementById('magic-status');
+                const text = document.getElementById('challenge-text');
+                status.innerText = "Thinking... ✨";
+                status.style.color = "#4ade80";
+                
+                try {
+                    const idea = await callGeminiText("Give me a fun, short (max 10 words) building challenge for a minecraft-like game. Do not use quotes.");
+                    text.innerText = idea;
+                    status.innerText = "Challenge accepted?";
+                } catch (e) {
+                    status.innerText = "Error: " + e.message;
+                }
+            });
+
+            document.getElementById('btn-build').addEventListener('click', async () => {
+                const input = document.getElementById('magic-input').value;
+                if (!input) return;
+                
+                const status = document.getElementById('magic-status');
+                status.innerText = "Architecting... ✨";
+                status.style.color = "#4ade80";
+
+                try {
+                    await magicBuild(input);
+                    status.innerText = "Built! Look around.";
+                    setTimeout(closeMagicPanel, 1000);
+                } catch (e) {
+                    console.error(e);
+                    status.innerText = "Failed to build.";
+                }
+            });
+        }
+
+        async function callGeminiText(prompt) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+            });
+            const data = await response.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text || "Try again.";
+        }
+
+        async function magicBuild(userPrompt) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const systemPrompt = `You are a Minecraft Voxel Architect. Generate JSON. Blocks: 1=Grass, 2=Dirt, 3=Stone, 4=Wood, 5=Leaves. Max 100 blocks.`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: "Build this: " + userPrompt }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                blocks: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            x: { type: "INTEGER" },
+                                            y: { type: "INTEGER" },
+                                            z: { type: "INTEGER" },
+                                            type: { type: "INTEGER" }
+                                        },
+                                        required: ["x", "y", "z", "type"]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
+            });
+
+            const data = await response.json();
+            const json = JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
+            if (json.blocks) placeStructure(json.blocks);
+        }
+
+        function placeStructure(blocks) {
+            const pPos = controls.getObject().position;
+            const originX = Math.round(pPos.x);
+            const originY = Math.round(pPos.y);
+            const originZ = Math.round(pPos.z);
+            
+            blocks.forEach(b => {
+                addBlock(originX + b.x, originY + b.y, originZ + b.z - 5, b.type);
+            });
+        }
+
+        // --- WORLD GENERATION & MODIFICATION ---
+        const geometryBox = new THREE.BoxGeometry(1, 1, 1);
+
+        function addBlock(x, y, z, type) {
+            if(worldData[`${x},${y},${z}`]) return; 
+
+            let mat = materials[type];
+            const mesh = new THREE.Mesh(geometryBox, mat);
+            mesh.position.set(x, y, z);
+            mesh.userData = { x, y, z, type }; 
+            
+            scene.add(mesh);
+            objects.push(mesh);
+            worldData[`${x},${y},${z}`] = mesh;
+        }
+
+        function removeBlock(mesh) {
+            scene.remove(mesh);
+            const idx = objects.indexOf(mesh);
+            if (idx > -1) objects.splice(idx, 1);
+            delete worldData[`${mesh.userData.x},${mesh.userData.y},${mesh.userData.z}`];
+        }
+
+        function generateWorld() {
+            const size = 16;
+            for (let x = -size; x < size; x++) {
+                for (let z = -size; z < size; z++) {
+                    const h = Math.floor(Math.sin(x * 0.1) * 3 + Math.cos(z * 0.1) * 3); 
+                    const height = 4 + h;
+                    addBlock(x, height, z, 1);
+                    for(let d=1; d<3; d++) addBlock(x, height - d, z, 2);
+                    addBlock(x, height - 3, z, 3);
+                    if (Math.random() < 0.02 && x > -10 && x < 10 && z > -10 && z < 10) createTree(x, height + 1, z);
+                }
+            }
+        }
+
+        function createTree(x, y, z) {
+            for (let i = 0; i < 4; i++) addBlock(x, y + i, z, 4);
+            for (let lx = -1; lx <= 1; lx++) {
+                for (let ly = 0; ly <= 1; ly++) {
+                    for (let lz = -1; lz <= 1; lz++) {
+                        if (lx === 0 && lz === 0 && ly === 0) continue; 
+                        addBlock(x + lx, y + 3 + ly, z + lz, 5);
+                    }
+                }
+            }
+            addBlock(x, y+5, z, 5);
+        }
+
+        // --- INTERACTIONS ---
+        function onMouseClick(event) {
+            if (!controls.enabled) return;
+            if (document.getElementById('magic-panel').style.display === 'block') return;
+            performAction(event.button);
+        }
+
+        function performAction(buttonCode) {
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(objects);
+
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                if (buttonCode === 0) { // Mine
+                    removeBlock(intersect.object);
+                } 
+                else if (buttonCode === 2) { // Build
+                    const objPos = intersect.object.position;
+                    const normal = intersect.face.normal;
+                    const newX = objPos.x + normal.x;
+                    const newY = objPos.y + normal.y;
+                    const newZ = objPos.z + normal.z;
+
+                    const playerPos = controls.getObject().position;
+                    const pX = Math.round(playerPos.x);
+                    const pZ = Math.round(playerPos.z);
+                    const pY = Math.round(playerPos.y); 
+                    const pFootY = Math.round(playerPos.y - 1);
+                    
+                    if (newX === pX && newZ === pZ && (newY === pY || newY === pFootY)) return; 
+                    addBlock(newX, newY, newZ, selectedBlockType);
+                }
+            }
+        }
+
+        function checkCollision(x, y, z) {
+            const cx = Math.round(x);
+            const cy = Math.round(y);
+            const cz = Math.round(z);
+            return !!worldData[`${cx},${cy},${cz}`];
+        }
+
+        // --- GAME LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls.enabled) {
+                const time = performance.now();
+                const delta = (time - prevTime) / 1000;
+
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+                velocity.y -= 9.8 * 2.0 * delta; 
+
+                // Determine movement direction (Keyboard + Joystick)
+                let inputForward = Number(moveForward) - Number(moveBackward);
+                let inputRight = Number(moveRight) - Number(moveLeft);
+
+                // Add Joystick input
+                if (isMobile) {
+                    // Joystick Y is inverted (up is negative usually, but here handled by math)
+                    inputForward -= joystickMove.y; // Forward is negative Y in joystick logic usually, let's check
+                    inputRight += joystickMove.x; 
+                }
+
+                direction.z = inputForward;
+                direction.x = inputRight;
+                // Normalize if length > 1 to prevent super speed
+                if(direction.length() > 1) direction.normalize();
+
+                if (direction.z !== 0 || direction.x !== 0) {
+                     velocity.z -= direction.z * 100.0 * delta;
+                     velocity.x -= direction.x * 100.0 * delta;
+                }
+
+                // Move & Collision
+                controls.getObject().translateX(velocity.x * delta);
+                let pos = controls.getObject().position;
+                if (checkCollision(pos.x, pos.y, pos.z) || checkCollision(pos.x, pos.y-1, pos.z)) {
+                    controls.getObject().translateX(-(velocity.x * delta));
+                    velocity.x = 0;
+                }
+
+                controls.getObject().translateZ(velocity.z * delta);
+                pos = controls.getObject().position;
+                if (checkCollision(pos.x, pos.y, pos.z) || checkCollision(pos.x, pos.y-1, pos.z)) {
+                     controls.getObject().translateZ(-(velocity.z * delta));
+                     velocity.z = 0;
+                }
+
+                controls.getObject().position.y += (velocity.y * delta);
+                
+                if (controls.getObject().position.y < -100) {
+                    velocity.y = 0;
+                    controls.getObject().position.y = 10;
+                    controls.getObject().position.x = 0;
+                    controls.getObject().position.z = 0;
+                }
+                
+                pos = controls.getObject().position;
+                if (checkCollision(pos.x, pos.y - 1.5, pos.z)) {
+                    velocity.y = Math.max(0, velocity.y);
+                    canJump = true;
+                    controls.getObject().position.y = Math.round(pos.y - 1.5) + 0.5 + 1.5; 
+                }
+                prevTime = time;
+            }
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function setupHotbar() {
+            const container = document.getElementById('hotbar');
+            const types = [
+                {id: 1, color: '#5C9E47'}, {id: 2, color: '#63412B'}, {id: 3, color: '#757575'},
+                {id: 4, color: '#6B4C29'}, {id: 5, color: '#3A7A3A'}
+            ];
+            
+            types.forEach(t => {
+                const el = document.createElement('div');
+                el.className = 'slot' + (t.id === 1 ? ' active' : '');
+                el.style.backgroundColor = t.color;
+                el.innerText = t.id;
+                el.id = 'slot-' + t.id;
+                // Add touch support for hotbar
+                el.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    selectSlot(t.id);
+                });
+                container.appendChild(el);
+            });
+        }
+
+        function selectSlot(id) {
+            selectedBlockType = id;
+            document.querySelectorAll('.slot').forEach(el => el.classList.remove('active'));
+            document.getElementById('slot-' + id).classList.add('active');
+        }
+
+        init();
+    </script>
+</body>
+</html>
